@@ -70,20 +70,24 @@ Edit `package.json` file and add the following:
 You need to tell `go-npm` where to download the binaries from, and where to install them. Edit `package.json` file and add the following configuration.
 
 ```
-"goBinary": {
-      "name": "command-name",
-      "path": "./bin",
-      "url": "https://github.com/user/my-go-package/releases/download/v{{version}}/myGoPackage_{{version}}_{{platform}}_{{arch}}.tar.gz"
+ "goBinary": {
+    "name": "myBinaryName",
+    "path": "./bin",
+    "archives": {
+      "windows": {
+        "x64": "https://github.com/pgollangi/fastget/releases/download/{version}/fastget_{version}_windows_x86_64.zip",
+        "x32": "https://github.com/pgollangi/fastget/releases/download/{version}/fastget_{version}_windows_i386.zip"
+      }
+    }
+  }
 ```
 
 * *name*: Name of the command users will use to run your binary. 
 * *path*: Temporary path where binaries will be downloaded to
-* *url*: HTTP Web server where binaries are hosted.
+* *archives*: List of archive URLs for each OS and ARCHs
 
 Following variables are available to customize the URL:
 * `{{version}}`: Version number read from  `package.json` file. When you publish your package to NPM, it will use this version number. Ex: 0.0.1
-* `{{platform}}`: `$GOOS` value for the platform
-* `{{arch}}`: `$GOARCH` value for the architecture
 
 If you use `goreleaser` to publish your modules, it will automatically set the right architecture & platform in your URL.
 
@@ -105,5 +109,3 @@ To Update:
 
 
 ---
-
-With ❤️ to the community by [Sanath Kumar Ramesh](http://twitter.com/sanathkr_)

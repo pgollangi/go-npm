@@ -2,27 +2,24 @@
 
 "use strict"
 
+const { url } = require('inspector');
 const request = require('request'),
     path = require('path'),
     tar = require('tar'),
     zlib = require('zlib'),
     mkdirp = require('mkdirp'),
     fs = require('fs'),
+    unzip = require('unzip-stream'),
     exec = require('child_process').exec;
 
 // Mapping from Node's `process.arch` to Golang's `$GOARCH`
 const ARCH_MAPPING = {
-    "ia32": "386",
-    "x64": "amd64",
-    "arm": "arm"
+    "ia32": "x32",
+    "amd64": "x64"
 };
 
-// Mapping between Node's `process.platform` to Golang's 
 const PLATFORM_MAPPING = {
-    "darwin": "darwin",
-    "linux": "linux",
-    "win32": "windows",
-    "freebsd": "freebsd"
+    "win32": "windows"
 };
 
 function getInstallationPath(callback) {
@@ -83,24 +80,20 @@ function validateConfiguration(packageJson) {
         return "'path' property is necessary";
     }
 
-    if (!packageJson.goBinary.url) {
-        return "'url' property is required";
-    }
-
     // if (!packageJson.bin || typeof(packageJson.bin) !== "object") {
     //     return "'bin' property of package.json must be defined and be an object";
     // }
 }
 
 function parsePackageJson() {
-    if (!(process.arch in ARCH_MAPPING)) {
-        console.error("Installation is not supported for this architecture: " + process.arch);
-        return;
+    var arch = process.arch;
+    if (ARCH_MAPPING[arch]) {
+        arch = ARCH_MAPPING[arch]
     }
 
-    if (!(process.platform in PLATFORM_MAPPING)) {
-        console.error("Installation is not supported for this platform: " + process.platform);
-        return
+    var platform = process.platform;
+    if (PLATFORM_MAPPING[platform]) {
+        platform = PLATFORM_MAPPING[platform]
     }
 
     const packageJsonPath = path.join(".", "package.json");
@@ -116,11 +109,25 @@ function parsePackageJson() {
         console.error("Invalid package.json: " + error);
         return
     }
+    if (!packageJson.goBinary) {
+        console.error("`goBinary` not provided in package.json");
+        return
+    }
 
     // We have validated the config. It exists in all its glory
     let binName = packageJson.goBinary.name;
     let binPath = packageJson.goBinary.path;
-    let url = packageJson.goBinary.url;
+    let archives = packageJson.goBinary.archives;
+    let platformArchives = archives[platform];
+    if (!platformArchives) {
+        console.error("No suitable archive found for the current platform :",platform);
+        return;
+    }
+    var url = platformArchives[arch];
+    if (!url) {
+        console.error("No suitable archive found for the current arch :",arch);
+        return;
+    }
     let version = packageJson.version;
     if (version[0] === 'v') version = version.substr(1);  // strip the 'v' if necessary v0.0.1 => 0.0.1
 
@@ -130,8 +137,6 @@ function parsePackageJson() {
     }
 
     // Interpolate variables in URL, if necessary
-    url = url.replace(/{{arch}}/g, ARCH_MAPPING[process.arch]);
-    url = url.replace(/{{platform}}/g, PLATFORM_MAPPING[process.platform]);
     url = url.replace(/{{version}}/g, version);
     url = url.replace(/{{bin_name}}/g, binName);
 
@@ -158,23 +163,31 @@ function install(callback) {
     if (!opts) return callback(INVALID_INPUT);
 
     mkdirp.sync(opts.binPath);
-    let ungz = zlib.createGunzip();
-    let untar = tar.Extract({path: opts.binPath});
 
-    ungz.on('error', callback);
-    untar.on('error', callback);
-
-    // First we will Un-GZip, then we will untar. So once untar is completed,
-    // binary is downloaded into `binPath`. Verify the binary and call it good
-    untar.on('end', verifyAndPlaceBinary.bind(null, opts.binName, opts.binPath, callback));
+   
 
     console.log("Downloading from URL: " + opts.url);
     let req = request({uri: opts.url});
     req.on('error', callback.bind(null, "Error downloading from URL: " + opts.url));
     req.on('response', function(res) {
         if (res.statusCode !== 200) return callback("Error downloading binary. HTTP Status Code: " + res.statusCode);
-
-        req.pipe(ungz).pipe(untar);
+        var fileExtension = opts.url.substring(opts.url.lastIndexOf(".")+1)
+        if (fileExtension === "zip") {
+            var extractZip = unzip.Extract({ path: opts.binPath})
+            extractZip.on('close', verifyAndPlaceBinary.bind(null, opts.binName, opts.binPath, callback));
+            req.pipe(extractZip)
+        } else  {
+            let ungz = zlib.createGunzip();
+            let untar = tar.Extract({path: opts.binPath});
+        
+            ungz.on('error', callback);
+            untar.on('error', callback);
+        
+            // First we will Un-GZip, then we will untar. So once untar is completed,
+            // binary is downloaded into `binPath`. Verify the binary and call it good
+            untar.on('end', verifyAndPlaceBinary.bind(null, opts.binName, opts.binPath, callback));
+            req.pipe(ungz).pipe(untar);
+        }
     });
 }
 

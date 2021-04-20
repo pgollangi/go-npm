@@ -10,6 +10,15 @@
   "goBinary": {
     "name": "myBinaryName",
     "path": "./bin",
-    "url": "https://github.com/user/myrepo/releases/download/v{{version}}/myBinaryName{{platform}}_{{arch}}.tar.gz"
+    "archives": {
+      "windows": {
+        "x64": "https://github.com/pgollangi/fastget/releases/download/{version}/fastget_{version}_windows_x86_64.zip",
+        "x32": "https://github.com/pgollangi/fastget/releases/download/{version}/fastget_{version}_windows_i386.zip"
+      }
+    }
+  },
+  "dependencies": {
+    "jszip": "^3.6.0",
+    "node-stream-zip": "^1.13.3"
   }
 }
