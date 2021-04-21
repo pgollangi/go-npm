@@ -1,6 +1,6 @@
 {
   "name": "@pgollangi/go-npm",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Distribute and install Go binaries via NPM",
   "main": "src/index.js",
   "bin": {
