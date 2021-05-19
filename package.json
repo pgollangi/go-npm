@@ -13,7 +13,9 @@
   "author": "Prasanna Kumar Gollangi <pgollangi@pm.me>",
   "license": "MIT",
   "dependencies": {
+    "cli-progress": "^3.9.0",
     "mkdirp": "^0.5.1",
+    "progress-stream": "^2.0.0",
     "request": "^2.81.0",
     "tar": "^2.2.1",
     "unzip-stream": "^0.3.1"

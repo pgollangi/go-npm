@@ -12,6 +12,9 @@ const request = require('request'),
     unzip = require('unzip-stream'),
     exec = require('child_process').exec;
 
+const progress = require('progress-stream')
+const cliProgress = require('cli-progress')
+
 // Mapping from Node's `process.arch` to Golang's `$GOARCH`
 const ARCH_MAPPING = {
     "ia32": "x32",
@@ -25,10 +28,10 @@ const PLATFORM_MAPPING = {
 function getInstallationPath(callback) {
 
     // `npm bin` will output the path where binary files should be installed
-    exec("npm bin", function(err, stdout, stderr) {
+    exec("npm bin", function (err, stdout, stderr) {
 
-        let dir =  null;
-        if (err || stderr || !stdout || stdout.length === 0)  {
+        let dir = null;
+        if (err || stderr || !stdout || stdout.length === 0) {
 
             // We couldn't infer path from `npm bin`. Let's try to get it from
             // Environment variables set by NPM when it runs.
@@ -52,7 +55,7 @@ function getInstallationPath(callback) {
 function verifyAndPlaceBinary(binName, binPath, callback) {
     if (!fs.existsSync(path.join(binPath, binName))) return callback(`Downloaded binary does not contain the binary specified in configuration - ${binName}`);
 
-    getInstallationPath(function(err, installationPath) {
+    getInstallationPath(function (err, installationPath) {
         if (err) return callback("Error getting binary installation path from `npm bin`");
 
         // Move the binary file
@@ -68,7 +71,7 @@ function validateConfiguration(packageJson) {
         return "'version' property must be specified";
     }
 
-    if (!packageJson.goBinary || typeof(packageJson.goBinary) !== "object") {
+    if (!packageJson.goBinary || typeof (packageJson.goBinary) !== "object") {
         return "'goBinary' property must be defined and be an object";
     }
 
@@ -120,12 +123,12 @@ function parsePackageJson() {
     let archives = packageJson.goBinary.archives;
     let platformArchives = archives[platform];
     if (!platformArchives) {
-        console.error("No suitable archive found for the current platform :",platform);
+        console.error("No suitable archive found for the current platform :", platform);
         return;
     }
     var url = platformArchives[arch];
     if (!url) {
-        console.error("No suitable archive found for the current arch :",arch);
+        console.error("No suitable archive found for the current arch :", arch);
         return;
     }
     let version = packageJson.version;
@@ -164,29 +167,54 @@ function install(callback) {
 
     mkdirp.sync(opts.binPath);
 
-   
+
 
     console.log("Downloading from URL: " + opts.url);
-    let req = request({uri: opts.url});
+    let req = request({ uri: opts.url });
     req.on('error', callback.bind(null, "Error downloading from URL: " + opts.url));
-    req.on('response', function(res) {
-        if (res.statusCode !== 200) return callback("Error downloading binary. HTTP Status Code: " + res.statusCode);
-        var fileExtension = opts.url.substring(opts.url.lastIndexOf(".")+1)
-        if (fileExtension === "zip") {
-            var extractZip = unzip.Extract({ path: opts.binPath})
-            extractZip.on('close', verifyAndPlaceBinary.bind(null, opts.binName, opts.binPath, callback));
-            req.pipe(extractZip)
-        } else  {
-            let ungz = zlib.createGunzip();
-            let untar = tar.Extract({path: opts.binPath});
+    req.on('response', function (res) {
+        if (res.statusCode !== 200) {
+         return callback("Error downloading binary. HTTP Status Code: " + res.statusCode);
+        }
+        var fileExtension = opts.url.substring(opts.url.lastIndexOf(".") + 1)
         
+        const contentLength = res.headers['content-length']
+
+        const bar = new cliProgress.SingleBar({
+            format: `${opts.binName} |  {bar} | {percentage}% | ETA: {eta_formatted} | {value}/{total}`,
+            barCompleteChar: '\u2588',
+            barIncompleteChar: '\u2591',
+            hideCursor: true,
+            stopOnComplete: true,
+            clearOnComplete: true
+        })
+        bar.start(contentLength, 0, {
+            speed: 'N/A'
+        })
+
+        const progressStream = progress({ time: 100 })
+
+        progressStream.on('progress', function (progress) {
+            bar.update(progress.transferred)
+        })
+
+
+        
+        if (fileExtension === "zip") {
+            var extractZip = unzip.Extract({ path: opts.binPath })
+            extractZip.on('close', verifyAndPlaceBinary.bind(null, opts.binName, opts.binPath, callback));
+            req.pipe(progressStream).pipe(extractZip)
+        } else {
+            let ungz = zlib.createGunzip();
+            let untar = tar.Extract({ path: opts.binPath });
+
             ungz.on('error', callback);
             untar.on('error', callback);
-        
+
             // First we will Un-GZip, then we will untar. So once untar is completed,
             // binary is downloaded into `binPath`. Verify the binary and call it good
             untar.on('end', verifyAndPlaceBinary.bind(null, opts.binName, opts.binPath, callback));
-            req.pipe(ungz).pipe(untar);
+            req.pipe(progressStream).pipe(ungz).pipe(untar);
         }
     });
 }
@@ -194,12 +222,12 @@ function install(callback) {
 function uninstall(callback) {
 
     let opts = parsePackageJson();
-    getInstallationPath(function(err, installationPath) {
+    getInstallationPath(function (err, installationPath) {
         if (err) callback("Error finding binary installation directory");
 
         try {
             fs.unlinkSync(path.join(installationPath, opts.binName));
-        } catch(ex) {
+        } catch (ex) {
             // Ignore errors when deleting the file.
         }
 
@@ -222,7 +250,7 @@ if (argv && argv.length > 2) {
         process.exit(1);
     }
 
-    actions[cmd](function(err) {
+    actions[cmd](function (err) {
         if (err) {
             console.error(err);
             process.exit(1);
